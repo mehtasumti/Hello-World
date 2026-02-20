@@ -1,6 +1,6 @@
 # ☁️ AWS Hello World — DevOps Assessment
 
-A production-style "Hello World" web application deployed on AWS, demonstrating cloud infrastructure fundamentals including VPC design, EC2, Nginx, and an Application Load Balancer — all provisioned via CloudFormation.
+A production-style "Hello World" web application deployed on AWS, demonstrating cloud infrastructure fundamentals including VPC design, EC2, Nginx, and an Application Load Balancer  all provisioned via CloudFormation.
 
 ---
 
@@ -56,19 +56,14 @@ aws-hello-world/
 ├── README.md                        ← You are here
 ├── cloudformation/
 │   └── hello-world-infrastructure.yaml  ← Deploy everything with one command
-├── docs/
-│   ├── DEPLOYMENT_GUIDE.md          ← Step-by-step manual deployment guide
-│   └── architecture-diagram.html    ← Interactive architecture diagram
 ├── configs/
 │   ├── index.html                   ← Hello World HTML page
 │   └── nginx.conf                   ← Nginx server block config
 ├── scripts/
 │   └── user-data.sh                 ← EC2 bootstrap script
 └── screenshots/
-    ├── vpc-subnets.png              ← Add your screenshot here
-    ├── security-groups.png          ← Add your screenshot here
-    ├── target-group-healthy.png     ← Add your screenshot here
-    └── working-page.png             ← Add your screenshot here
+    ├── vpc-output.png              ← Add your screenshot here
+
 ```
 
 ---
@@ -144,32 +139,4 @@ Key security principles:
 | Load Balancer | `hello-world-alb` | internet-facing, HTTP:80 |
 | Target Group | `hello-world-tg` | /health checks, HTTP:80 |
 
----
 
-## 🛠️ Debugging
-
-If the page doesn't load after 5 minutes:
-
-1. **Check Target Group health** → EC2 → Target Groups → `hello-world-tg` → Targets tab (should show Healthy)
-2. **Check Nginx via Session Manager** → EC2 → Instances → Select instance → Connect → Session Manager
-
-```bash
-# Check if Nginx is running
-sudo systemctl status nginx
-
-# View bootstrap log
-sudo cat /var/log/userdata.log
-
-# Test health endpoint locally
-curl http://localhost/health
-```
-
----
-
-## 🧹 Cost Reminder
-
-The NAT Gateway costs ~$0.045/hour. Always delete the stack when done:
-
-```bash
-aws cloudformation delete-stack --stack-name hello-world-stack
-```
