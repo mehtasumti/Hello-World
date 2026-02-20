@@ -1,0 +1,17 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# AWS credentials - NEVER commit these
+.aws/
+*.pem
+*.key
+credentials
+
+# Editor
+.vscode/
+.idea/
+
+# Temporary
+*.log
+*.tmp
