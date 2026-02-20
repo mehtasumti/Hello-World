@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hello World - AWS DevOps Assessment</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #ffffff;
+        }
+        .container {
+            text-align: center;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 50px 60px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 25px 50px rgba(0,0,0,0.4);
+            max-width: 600px;
+            width: 90%;
+        }
+        .aws-badge {
+            display: inline-block;
+            background: #FF9900;
+            color: #000;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 4px 12px;
+            border-radius: 20px;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        h1 {
+            font-size: 3.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #FF9900, #ffcc66);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle {
+            color: rgba(255,255,255,0.6);
+            margin-bottom: 40px;
+            font-size: 1rem;
+        }
+        .info-card {
+            background: rgba(255, 153, 0, 0.08);
+            border: 1px solid rgba(255, 153, 0, 0.3);
+            border-radius: 12px;
+            padding: 24px;
+            margin-top: 20px;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .info-row:last-child { border-bottom: none; }
+        .info-label {
+            color: rgba(255,255,255,0.5);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .info-value {
+            font-weight: 600;
+            color: #ffcc66;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+        .served-by {
+            margin-top: 30px;
+            color: rgba(255,255,255,0.4);
+            font-size: 0.85rem;
+        }
+        .nginx-logo {
+            color: #009639;
+            font-weight: 700;
+        }
+        .pulse {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #00ff88;
+            border-radius: 50%;
+            margin-right: 6px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="aws-badge">☁️ AWS Infrastructure</div>
+        <h1>Hello World!</h1>
+        <p class="subtitle">Running on Amazon Web Services</p>
+
+        <div class="info-card">
+            <div class="info-row">
+                <span class="info-label">Instance ID</span>
+                <span class="info-value" id="instance-id">Loading...</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Availability Zone</span>
+                <span class="info-value" id="az">Loading...</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Region</span>
+                <span class="info-value" id="region">Loading...</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Private IP</span>
+                <span class="info-value" id="private-ip">Loading...</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Status</span>
+                <span class="info-value"><span class="pulse"></span>Healthy</span>
+            </div>
+        </div>
+
+        <p class="served-by">Served by <span class="nginx-logo">Nginx</span> · Deployed via ALB</p>
+    </div>
+
+    <script>
+        // Fetch EC2 instance metadata using IMDSv2
+        async function fetchMetadata() {
+            try {
+                // Get IMDSv2 token
+                const tokenResp = await fetch('http://169.254.169.254/latest/api/token', {
+                    method: 'PUT',
+                    headers: { 'X-aws-ec2-metadata-token-ttl-seconds': '21600' }
+                });
+                const token = await tokenResp.text();
+                const headers = { 'X-aws-ec2-metadata-token': token };
+
+                const [instanceId, az, privateIp] = await Promise.all([
+                    fetch('http://169.254.169.254/latest/meta-data/instance-id', { headers }).then(r => r.text()),
+                    fetch('http://169.254.169.254/latest/meta-data/placement/availability-zone', { headers }).then(r => r.text()),
+                    fetch('http://169.254.169.254/latest/meta-data/local-ipv4', { headers }).then(r => r.text()),
+                ]);
+
+                document.getElementById('instance-id').textContent = instanceId;
+                document.getElementById('az').textContent = az;
+                document.getElementById('region').textContent = az.slice(0, -1); // Remove last char (a/b) for region
+                document.getElementById('private-ip').textContent = privateIp;
+            } catch (e) {
+                // Fallback for local testing
+                document.getElementById('instance-id').textContent = 'i-1234567890abcdef0';
+                document.getElementById('az').textContent = 'us-east-1a';
+                document.getElementById('region').textContent = 'us-east-1';
+                document.getElementById('private-ip').textContent = '10.0.1.100';
+            }
+        }
+        fetchMetadata();
+    </script>
+</body>
+</html>

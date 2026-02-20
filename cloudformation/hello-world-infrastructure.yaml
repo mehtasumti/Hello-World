@@ -1,0 +1,561 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Hello World DevOps Assessment v3 - YAML parse error fixed.
+  UserData rewritten using Fn::Join to avoid heredoc/YAML conflicts.
+
+# ============================================================
+# PARAMETERS
+# ============================================================
+Parameters:
+
+  ProjectName:
+    Type: String
+    Default: hello-world
+    Description: Prefix used for all resource names
+
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+
+  PublicSubnet1Cidr:
+    Type: String
+    Default: 10.0.1.0/24
+
+  PublicSubnet2Cidr:
+    Type: String
+    Default: 10.0.2.0/24
+
+  PrivateSubnet1Cidr:
+    Type: String
+    Default: 10.0.3.0/24
+
+  PrivateSubnet2Cidr:
+    Type: String
+    Default: 10.0.4.0/24
+
+  InstanceType:
+    Type: String
+    Default: t2.micro
+    AllowedValues: [t2.micro, t3.micro, t3.small]
+
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+# ============================================================
+# RESOURCES
+# ============================================================
+Resources:
+
+  # ----------------------------------------------------------
+  # VPC
+  # ----------------------------------------------------------
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-vpc
+
+  # ----------------------------------------------------------
+  # SUBNETS
+  # ----------------------------------------------------------
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet1Cidr
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-public-subnet-1a
+        - Key: Type
+          Value: Public
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet2Cidr
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-public-subnet-2b
+        - Key: Type
+          Value: Public
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet1Cidr
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-private-subnet-1a
+        - Key: Type
+          Value: Private
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet2Cidr
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-private-subnet-2b
+        - Key: Type
+          Value: Private
+
+  # ----------------------------------------------------------
+  # INTERNET GATEWAY
+  # ----------------------------------------------------------
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-igw
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # ----------------------------------------------------------
+  # NAT GATEWAY
+  # ----------------------------------------------------------
+  NatGatewayEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-nat-eip
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    DependsOn:
+      - InternetGatewayAttachment
+      - PublicSubnet1RouteTableAssociation
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      ConnectivityType: public
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-nat
+
+  # ----------------------------------------------------------
+  # ROUTE TABLES
+  # ----------------------------------------------------------
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-public-rt
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-private-rt
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    DependsOn: NatGateway
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  # ----------------------------------------------------------
+  # SECURITY GROUPS
+  # ----------------------------------------------------------
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${ProjectName}-alb-sg
+      GroupDescription: Allow HTTP inbound from internet
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: Allow HTTP from anywhere
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-alb-sg
+
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${ProjectName}-ec2-sg
+      GroupDescription: Allow HTTP from ALB only
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+          Description: Allow HTTP from ALB security group only
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound via NAT
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-ec2-sg
+
+  ALBEgressToEC2:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref ALBSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      DestinationSecurityGroupId: !Ref EC2SecurityGroup
+      Description: ALB forwards to EC2 on port 80
+
+  # ----------------------------------------------------------
+  # IAM ROLE (SSM Session Manager access - no SSH needed)
+  # ----------------------------------------------------------
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-ec2-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-ec2-role
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub ${ProjectName}-ec2-profile
+      Roles:
+        - !Ref EC2InstanceRole
+
+  # ----------------------------------------------------------
+  # LAUNCH TEMPLATE
+  # UserData uses Fn::Base64 + Fn::Join to build the script
+  # as a list of strings — this completely avoids YAML parse
+  # errors caused by special characters (#, :, {, }) inside
+  # heredocs when written as a block scalar.
+  # ----------------------------------------------------------
+  EC2LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${ProjectName}-launch-template
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt EC2InstanceProfile.Arn
+        SecurityGroupIds:
+          - !Ref EC2SecurityGroup
+        MetadataOptions:
+          HttpTokens: required
+          HttpPutResponseHopLimit: 2
+          HttpEndpoint: enabled
+        UserData:
+          Fn::Base64:
+            Fn::Join:
+              - "\n"
+              - - "#!/bin/bash"
+                - "set -euo pipefail"
+                - "LOG=/var/log/userdata.log"
+                - "exec > >(tee -a $LOG) 2>&1"
+                - "echo '============================'"
+                - "echo 'User Data Started: '$(date)"
+                - "echo '============================'"
+                - ""
+                - "# Detect OS"
+                - ". /etc/os-release"
+                - "echo \"OS: $ID $VERSION_ID\""
+                - ""
+                - "# Install Nginx"
+                - "if [ \"$ID\" = \"amzn\" ]; then"
+                - "  dnf update -y"
+                - "  dnf install -y nginx"
+                - "elif [ \"$ID\" = \"ubuntu\" ]; then"
+                - "  apt-get update -y"
+                - "  apt-get install -y nginx"
+                - "fi"
+                - "systemctl enable nginx"
+                - "echo 'Nginx installed'"
+                - ""
+                - "# Fetch IMDSv2 token with retry"
+                - "for i in 1 2 3 4 5; do"
+                - "  TOKEN=$(curl -sf --retry 3 -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 21600') && break"
+                - "  echo \"Token attempt $i failed, retrying...\""
+                - "  sleep 3"
+                - "done"
+                - ""
+                - "# Fetch instance metadata"
+                - "INSTANCE_ID=$(curl -sf -H \"X-aws-ec2-metadata-token: $TOKEN\" http://169.254.169.254/latest/meta-data/instance-id)"
+                - "AZ=$(curl -sf         -H \"X-aws-ec2-metadata-token: $TOKEN\" http://169.254.169.254/latest/meta-data/placement/availability-zone)"
+                - "PRIVATE_IP=$(curl -sf -H \"X-aws-ec2-metadata-token: $TOKEN\" http://169.254.169.254/latest/meta-data/local-ipv4)"
+                - "REGION=\"${AZ%?}\""
+                - "echo \"Instance: $INSTANCE_ID | AZ: $AZ | IP: $PRIVATE_IP\""
+                - ""
+                - "# Write HTML page"
+                - "WEB_ROOT=/usr/share/nginx/html"
+                - "cat > $WEB_ROOT/index.html << HTMLEOF"
+                - "<!DOCTYPE html>"
+                - "<html lang=\"en\">"
+                - "<head>"
+                - "<meta charset=\"UTF-8\">"
+                - "<title>Hello World</title>"
+                - "<style>"
+                - "* { margin:0; padding:0; box-sizing:border-box; }"
+                - "body { font-family:'Segoe UI',sans-serif; background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460); min-height:100vh; display:flex; align-items:center; justify-content:center; color:#fff; }"
+                - ".container { text-align:center; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:50px 60px; max-width:600px; width:90%; }"
+                - ".badge { display:inline-block; background:#FF9900; color:#000; font-size:12px; font-weight:700; padding:4px 14px; border-radius:20px; margin-bottom:20px; }"
+                - "h1 { font-size:3.5rem; font-weight:700; margin-bottom:10px; background:linear-gradient(90deg,#FF9900,#ffcc66); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }"
+                - ".subtitle { color:rgba(255,255,255,0.6); margin-bottom:40px; }"
+                - ".card { background:rgba(255,153,0,0.08); border:1px solid rgba(255,153,0,0.3); border-radius:12px; padding:24px; }"
+                - ".row { display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.05); }"
+                - ".row:last-child { border-bottom:none; }"
+                - ".lbl { color:rgba(255,255,255,0.5); font-size:.82rem; text-transform:uppercase; }"
+                - ".val { font-weight:600; color:#ffcc66; font-family:monospace; }"
+                - ".pulse { display:inline-block; width:8px; height:8px; background:#00ff88; border-radius:50%; margin-right:6px; animation:pulse 2s infinite; }"
+                - "@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }"
+                - "footer { margin-top:28px; color:rgba(255,255,255,.35); font-size:.82rem; }"
+                - "</style>"
+                - "</head>"
+                - "<body>"
+                - "<div class=\"container\">"
+                - "<div class=\"badge\">AWS Infrastructure</div>"
+                - "<h1>Hello World!</h1>"
+                - "<p class=\"subtitle\">Running on Amazon Web Services</p>"
+                - "<div class=\"card\">"
+                - "<div class=\"row\"><span class=\"lbl\">Instance ID</span><span class=\"val\">$INSTANCE_ID</span></div>"
+                - "<div class=\"row\"><span class=\"lbl\">Availability Zone</span><span class=\"val\">$AZ</span></div>"
+                - "<div class=\"row\"><span class=\"lbl\">Region</span><span class=\"val\">$REGION</span></div>"
+                - "<div class=\"row\"><span class=\"lbl\">Private IP</span><span class=\"val\">$PRIVATE_IP</span></div>"
+                - "<div class=\"row\"><span class=\"lbl\">Status</span><span class=\"val\"><span class=\"pulse\"></span>Healthy</span></div>"
+                - "</div>"
+                - "<footer>Served by <strong style=\"color:#009639\">Nginx</strong> &middot; Deployed via CloudFormation</footer>"
+                - "</div>"
+                - "</body>"
+                - "</html>"
+                - "HTMLEOF"
+                - "echo 'HTML page written'"
+                - ""
+                - "# Write Nginx config"
+                - "cat > /etc/nginx/conf.d/hello-world.conf << 'NGINXEOF'"
+                - "server {"
+                - "    listen 80 default_server;"
+                - "    server_name _;"
+                - "    root /usr/share/nginx/html;"
+                - "    index index.html;"
+                - "    location /health {"
+                - "        access_log off;"
+                - "        return 200 \"healthy\\n\";"
+                - "        add_header Content-Type text/plain;"
+                - "    }"
+                - "    location / {"
+                - "        try_files $uri $uri/ =404;"
+                - "    }"
+                - "    add_header X-Frame-Options SAMEORIGIN;"
+                - "    add_header X-Content-Type-Options nosniff;"
+                - "}"
+                - "NGINXEOF"
+                - "echo 'Nginx config written'"
+                - ""
+                - "# Remove default configs that conflict"
+                - "rm -f /etc/nginx/conf.d/default.conf"
+                - "rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true"
+                - ""
+                - "# Test config and start Nginx"
+                - "nginx -t"
+                - "systemctl restart nginx"
+                - "systemctl status nginx --no-pager"
+                - ""
+                - "# Verify health endpoint"
+                - "sleep 2"
+                - "HTTP_CODE=$(curl -so /dev/null -w \"%{http_code}\" http://localhost/health)"
+                - "echo \"Health check response: $HTTP_CODE\""
+                - ""
+                - "echo '============================'"
+                - "echo 'User Data Completed: '$(date)"
+                - "echo '============================'"
+
+  # ----------------------------------------------------------
+  # EC2 INSTANCES
+  # DependsOn PrivateRoute ensures NAT is ready before boot
+  # ----------------------------------------------------------
+  WebServer1:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - PrivateRoute
+      - PrivateSubnet1RouteTableAssociation
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref EC2LaunchTemplate
+        Version: !GetAtt EC2LaunchTemplate.LatestVersionNumber
+      SubnetId: !Ref PrivateSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-web-server-1a
+
+  WebServer2:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - PrivateRoute
+      - PrivateSubnet2RouteTableAssociation
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref EC2LaunchTemplate
+        Version: !GetAtt EC2LaunchTemplate.LatestVersionNumber
+      SubnetId: !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-web-server-2b
+
+  # ----------------------------------------------------------
+  # APPLICATION LOAD BALANCER
+  # ----------------------------------------------------------
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn:
+      - InternetGatewayAttachment
+      - PublicRoute
+    Properties:
+      Name: !Sub ${ProjectName}-alb
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-alb
+
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${ProjectName}-tg
+      VpcId: !Ref VPC
+      Protocol: HTTP
+      Port: 80
+      TargetType: instance
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /health
+      HealthCheckPort: traffic-port
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 5
+      Matcher:
+        HttpCode: '200'
+      Targets:
+        - Id: !Ref WebServer1
+          Port: 80
+        - Id: !Ref WebServer2
+          Port: 80
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-tg
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+
+# ============================================================
+# OUTPUTS
+# ============================================================
+Outputs:
+
+  ALBURL:
+    Description: Open in browser after 3-5 mins for EC2 to finish bootstrapping
+    Value: !Sub "http://${ALB.DNSName}"
+    Export:
+      Name: !Sub ${ProjectName}-alb-url
+
+  ALBDNSName:
+    Description: Raw ALB DNS Name
+    Value: !GetAtt ALB.DNSName
+
+  VPCId:
+    Description: VPC ID
+    Value: !Ref VPC
+
+  WebServer1Id:
+    Description: EC2 Instance 1 - connect via Session Manager
+    Value: !Ref WebServer1
+
+  WebServer2Id:
+    Description: EC2 Instance 2 - connect via Session Manager
+    Value: !Ref WebServer2
+
+  DebugCommand:
+    Description: Run this in Session Manager to check Nginx status
+    Value: "sudo cat /var/log/userdata.log && sudo systemctl status nginx && curl http://localhost/health"
